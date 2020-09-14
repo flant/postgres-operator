@@ -678,6 +678,47 @@ class EndToEndTestCase(unittest.TestCase):
             raise
 
     @timeout_decorator.timeout(TEST_TIMEOUT_SEC)
+    def test_infrastructure_roles(self):
+        '''
+            Test using external secrets for infrastructure roles
+        '''
+        k8s = self.k8s
+        # update infrastructure roles description
+        secret_name = "postgresql-infrastructure-roles"
+        roles = "secretname: postgresql-infrastructure-roles-new, userkey: user, rolekey: memberof, passwordkey: password, defaultrolevalue: robot_zmon"
+        patch_infrastructure_roles = {
+            "data": {
+                "infrastructure_roles_secret_name": secret_name,
+                "infrastructure_roles_secrets": roles,
+            },
+        }
+        k8s.update_config(patch_infrastructure_roles)
+
+        # wait a little before proceeding
+        time.sleep(30)
+
+        # check that new roles are represented in the config by requesting the
+        # operator configuration via API
+        operator_pod = k8s.get_operator_pod()
+        get_config_cmd = "wget --quiet -O - localhost:8080/config"
+        result = k8s.exec_with_kubectl(operator_pod.metadata.name, get_config_cmd)
+        roles_dict = (json.loads(result.stdout)
+                      .get("controller", {})
+                      .get("InfrastructureRoles"))
+
+        self.assertTrue("robot_zmon_acid_monitoring_new" in roles_dict)
+        role = roles_dict["robot_zmon_acid_monitoring_new"]
+        role.pop("Password", None)
+        self.assertDictEqual(role, {
+            "Name": "robot_zmon_acid_monitoring_new",
+            "Flags": None,
+            "MemberOf": ["robot_zmon"],
+            "Parameters": None,
+            "AdminRole": "",
+            "Origin": 2,
+        })
+
+    @timeout_decorator.timeout(TEST_TIMEOUT_SEC)
     def test_x_cluster_deletion(self):
         '''
            Test deletion with configured protection
