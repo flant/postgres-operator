@@ -28,6 +28,8 @@ type Resources struct {
 	PodLabelWaitTimeout     time.Duration       `name:"pod_label_wait_timeout" default:"10m"`
 	PodDeletionWaitTimeout  time.Duration       `name:"pod_deletion_wait_timeout" default:"10m"`
 	PodTerminateGracePeriod time.Duration       `name:"pod_terminate_grace_period" default:"5m"`
+	SpiloRunAsUser          *int64              `json:"spilo_runasuser,omitempty"`
+	SpiloRunAsGroup         *int64              `json:"spilo_runasgroup,omitempty"`
 	SpiloFSGroup            *int64              `name:"spilo_fsgroup"`
 	PodPriorityClassName    string              `name:"pod_priority_class_name"`
 	ClusterDomain           string              `name:"cluster_domain" default:"cluster.local"`
@@ -175,6 +177,8 @@ type Config struct {
 	EnablePodAntiAffinity                  bool              `name:"enable_pod_antiaffinity" default:"false"`
 	PodAntiAffinityTopologyKey             string            `name:"pod_antiaffinity_topology_key" default:"kubernetes.io/hostname"`
 	StorageResizeMode                      string            `name:"storage_resize_mode" default:"ebs"`
+	// ExternalTrafficPolicy for load balancer
+	ExternalTrafficPolicy string `name:"external_traffic_policy" default:"Cluster"`
 	// deprecated and kept for backward compatibility
 	EnableLoadBalancer        *bool             `name:"enable_load_balancer"`
 	MasterDNSNameFormat       StringTemplate    `name:"master_dns_name_format" default:"{cluster}.{team}.{hostedzone}"`
