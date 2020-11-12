@@ -571,6 +571,8 @@ func (c *Cluster) generatePodTemplate(
 	initContainers []v1.Container,
 	sidecarContainers []v1.Container,
 	tolerationsSpec *[]v1.Toleration,
+	spiloRunAsUser *int64,
+	spiloRunAsGroup *int64,
 	spiloFSGroup *int64,
 	nodeAffinity *v1.Affinity,
 	terminateGracePeriod int64,
@@ -589,6 +591,14 @@ func (c *Cluster) generatePodTemplate(
 	containers := []v1.Container{*spiloContainer}
 	containers = append(containers, sidecarContainers...)
 	securityContext := v1.PodSecurityContext{}
+
+	if spiloRunAsUser != nil {
+		securityContext.RunAsUser = spiloRunAsUser
+	}
+
+	if spiloRunAsGroup != nil {
+		securityContext.RunAsGroup = spiloRunAsGroup
+	}
 
 	if spiloFSGroup != nil {
 		securityContext.FSGroup = spiloFSGroup
@@ -845,7 +855,7 @@ func (c *Cluster) getPodEnvironmentSecretVariables() ([]v1.EnvVar, error) {
 		return secretPodEnvVarsList, nil
 	}
 
-	secret, err := c.KubeClient.Secrets(c.OpConfig.PodEnvironmentSecret).Get(
+	secret, err := c.KubeClient.Secrets(c.Namespace).Get(
 		context.TODO(),
 		c.OpConfig.PodEnvironmentSecret,
 		metav1.GetOptions{})
@@ -1092,7 +1102,17 @@ func (c *Cluster) generateStatefulSet(spec *acidv1.PostgresSpec) (*appsv1.Statef
 	// pickup the docker image for the spilo container
 	effectiveDockerImage := util.Coalesce(spec.DockerImage, c.OpConfig.DockerImage)
 
-	// determine the FSGroup for the spilo pod
+	// determine the User, Group and FSGroup for the spilo pod
+	effectiveRunAsUser := c.OpConfig.Resources.SpiloRunAsUser
+	if spec.SpiloRunAsUser != nil {
+		effectiveRunAsUser = spec.SpiloRunAsUser
+	}
+
+	effectiveRunAsGroup := c.OpConfig.Resources.SpiloRunAsGroup
+	if spec.SpiloRunAsGroup != nil {
+		effectiveRunAsGroup = spec.SpiloRunAsGroup
+	}
+
 	effectiveFSGroup := c.OpConfig.Resources.SpiloFSGroup
 	if spec.SpiloFSGroup != nil {
 		effectiveFSGroup = spec.SpiloFSGroup
@@ -1156,7 +1176,9 @@ func (c *Cluster) generateStatefulSet(spec *acidv1.PostgresSpec) (*appsv1.Statef
 	}
 
 	// generate the spilo container
-	c.logger.Debugf("Generating Spilo container, environment variables: %v", spiloEnvVars)
+	c.logger.Debugf("Generating Spilo container, environment variables")
+	c.logger.Debugf("%v", spiloEnvVars)
+
 	spiloContainer := generateContainer(c.containerName(),
 		&effectiveDockerImage,
 		resourceRequirements,
@@ -1235,6 +1257,8 @@ func (c *Cluster) generateStatefulSet(spec *acidv1.PostgresSpec) (*appsv1.Statef
 		initContainers,
 		sidecarContainers,
 		&tolerationSpec,
+		effectiveRunAsUser,
+		effectiveRunAsGroup,
 		effectiveFSGroup,
 		nodeAffinity(c.OpConfig.NodeReadinessLabel, &spec.NodeAffinity),
 		int64(c.OpConfig.PodTerminateGracePeriod.Seconds()),
@@ -1475,20 +1499,22 @@ func (c *Cluster) addAdditionalVolumes(podSpec *v1.PodSpec,
 
 	c.logger.Infof("Mount additional volumes: %+v", additionalVolumes)
 
-	for i := range podSpec.Containers {
-		mounts := podSpec.Containers[i].VolumeMounts
-		for _, v := range additionalVolumes {
-			for _, target := range v.TargetContainers {
-				if podSpec.Containers[i].Name == target || target == "all" {
-					mounts = append(mounts, v1.VolumeMount{
-						Name:      v.Name,
-						MountPath: v.MountPath,
-						SubPath:   v.SubPath,
-					})
+	for _, containers := range [][]v1.Container{podSpec.Containers, podSpec.InitContainers} {
+		for i := range containers {
+			mounts := containers[i].VolumeMounts
+			for _, v := range additionalVolumes {
+				for _, target := range v.TargetContainers {
+					if containers[i].Name == target || target == "all" {
+						mounts = append(mounts, v1.VolumeMount{
+							Name:      v.Name,
+							MountPath: v.MountPath,
+							SubPath:   v.SubPath,
+						})
+					}
 				}
 			}
+			containers[i].VolumeMounts = mounts
 		}
-		podSpec.Containers[i].VolumeMounts = mounts
 	}
 
 	podSpec.Volumes = volumes
@@ -1637,6 +1663,7 @@ func (c *Cluster) generateService(role PostgresRole, spec *acidv1.PostgresSpec) 
 		}
 
 		c.logger.Debugf("final load balancer source ranges as seen in a service spec (not necessarily applied): %q", serviceSpec.LoadBalancerSourceRanges)
+		serviceSpec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyType(c.OpConfig.ExternalTrafficPolicy)
 		serviceSpec.Type = v1.ServiceTypeLoadBalancer
 	} else if role == Replica {
 		// before PR #258, the replica service was only created if allocated a LB
@@ -1914,6 +1941,8 @@ func (c *Cluster) generateLogicalBackupJob() (*batchv1beta1.CronJob, error) {
 		[]v1.Container{},
 		&[]v1.Toleration{},
 		nil,
+		nil,
+		nil,
 		nodeAffinity(c.OpConfig.NodeReadinessLabel, nil),
 		int64(c.OpConfig.PodTerminateGracePeriod.Seconds()),
 		c.OpConfig.PodServiceAccountName,
@@ -2048,7 +2077,8 @@ func (c *Cluster) generateLogicalBackupPodEnvVars() []v1.EnvVar {
 		envVars = append(envVars, v1.EnvVar{Name: "AWS_SECRET_ACCESS_KEY", Value: c.OpConfig.LogicalBackup.LogicalBackupS3SecretAccessKey})
 	}
 
-	c.logger.Debugf("Generated logical backup env vars %v", envVars)
+	c.logger.Debugf("Generated logical backup env vars")
+	c.logger.Debugf("%v", envVars)
 	return envVars
 }
 
@@ -2209,6 +2239,13 @@ func (c *Cluster) generateConnectionPoolerPodTemplate(spec *acidv1.PostgresSpec)
 			},
 		},
 		Env: envVars,
+		ReadinessProbe: &v1.Probe{
+			Handler: v1.Handler{
+				TCPSocket: &v1.TCPSocketAction{
+					Port: intstr.IntOrString{IntVal: pgPort},
+				},
+			},
+		},
 	}
 
 	podTemplate := &v1.PodTemplateSpec{

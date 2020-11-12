@@ -107,12 +107,13 @@ var min0 = 0.0
 var min1 = 1.0
 var min2 = 2.0
 var minDisable = -1.0
+var maxLength = int64(53)
 
 // PostgresCRDResourceValidation to check applied manifest parameters
 var PostgresCRDResourceValidation = apiextv1beta1.CustomResourceValidation{
 	OpenAPIV3Schema: &apiextv1beta1.JSONSchemaProps{
 		Type:     "object",
-		Required: []string{"kind", "apiVersion", "spec"},
+		Required: []string{"kind", "apiVersion", "metadata", "spec"},
 		Properties: map[string]apiextv1beta1.JSONSchemaProps{
 			"kind": {
 				Type: "string",
@@ -127,6 +128,16 @@ var PostgresCRDResourceValidation = apiextv1beta1.CustomResourceValidation{
 				Enum: []apiextv1beta1.JSON{
 					{
 						Raw: []byte(`"acid.zalan.do/v1"`),
+					},
+				},
+			},
+			"metadata": {
+				Type:     "object",
+				Required: []string{"name"},
+				Properties: map[string]apiextv1beta1.JSONSchemaProps{
+					"name": {
+						Type:      "string",
+						MaxLength: &maxLength,
 					},
 				},
 			},
@@ -521,6 +532,12 @@ var PostgresCRDResourceValidation = apiextv1beta1.CustomResourceValidation{
 								},
 							},
 						},
+					},
+					"spiloRunAsUser": {
+						Type: "integer",
+					},
+					"spiloRunAsGroup": {
+						Type: "integer",
 					},
 					"spiloFSGroup": {
 						Type: "integer",
@@ -1027,6 +1044,12 @@ var OperatorConfigCRDResourceValidation = apiextv1beta1.CustomResourceValidation
 							"secret_name_template": {
 								Type: "string",
 							},
+							"spilo_runasuser": {
+								Type: "integer",
+							},
+							"spilo_runasgroup": {
+								Type: "integer",
+							},
 							"spilo_fsgroup": {
 								Type: "integer",
 							},
@@ -1132,6 +1155,17 @@ var OperatorConfigCRDResourceValidation = apiextv1beta1.CustomResourceValidation
 							"enable_replica_load_balancer": {
 								Type: "boolean",
 							},
+							"external_traffic_policy": {
+								Type: "string",
+								Enum: []apiextv1beta1.JSON{
+									{
+										Raw: []byte(`"Cluster"`),
+									},
+									{
+										Raw: []byte(`"Local"`),
+									},
+								},
+							},
 							"master_dns_name_format": {
 								Type: "string",
 							},
@@ -1208,6 +1242,12 @@ var OperatorConfigCRDResourceValidation = apiextv1beta1.CustomResourceValidation
 						Type: "object",
 						Properties: map[string]apiextv1beta1.JSONSchemaProps{
 							"enable_admin_role_for_users": {
+								Type: "boolean",
+							},
+							"enable_postgres_team_crd": {
+								Type: "boolean",
+							},
+							"enable_postgres_team_crd_superusers": {
 								Type: "boolean",
 							},
 							"enable_team_superuser": {
