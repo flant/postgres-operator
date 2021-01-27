@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -54,7 +54,7 @@ func (c *Controller) clusterWorkerID(clusterName spec.NamespacedName) uint32 {
 	return c.clusterWorkers[clusterName]
 }
 
-func (c *Controller) createOperatorCRD(crd *apiextv1beta1.CustomResourceDefinition) error {
+func (c *Controller) createOperatorCRD(crd *apiextv1.CustomResourceDefinition) error {
 	if _, err := c.KubeClient.CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
 		if k8sutil.ResourceAlreadyExists(err) {
 			c.logger.Infof("customResourceDefinition %q is already registered and will only be updated", crd.Name)
@@ -82,12 +82,12 @@ func (c *Controller) createOperatorCRD(crd *apiextv1beta1.CustomResourceDefiniti
 
 		for _, cond := range c.Status.Conditions {
 			switch cond.Type {
-			case apiextv1beta1.Established:
-				if cond.Status == apiextv1beta1.ConditionTrue {
+			case apiextv1.Established:
+				if cond.Status == apiextv1.ConditionTrue {
 					return true, err
 				}
-			case apiextv1beta1.NamesAccepted:
-				if cond.Status == apiextv1beta1.ConditionFalse {
+			case apiextv1.NamesAccepted:
+				if cond.Status == apiextv1.ConditionFalse {
 					return false, fmt.Errorf("name conflict: %v", cond.Reason)
 				}
 			}
@@ -341,9 +341,7 @@ func (c *Controller) getInfrastructureRole(
 				util.Coalesce(string(secretData[infraRole.RoleKey]), infraRole.DefaultRoleValue))
 		}
 
-		if roleDescr.Valid() {
-			roles = append(roles, *roleDescr)
-		} else {
+		if !roleDescr.Valid() {
 			msg := "infrastructure role %q is not complete and ignored"
 			c.logger.Warningf(msg, roleDescr)
 
@@ -400,7 +398,7 @@ func (c *Controller) loadPostgresTeams() {
 	// reset team map
 	c.pgTeamMap = teams.PostgresTeamMap{}
 
-	pgTeams, err := c.KubeClient.AcidV1ClientSet.AcidV1().PostgresTeams(c.opConfig.WatchedNamespace).List(context.TODO(), metav1.ListOptions{})
+	pgTeams, err := c.KubeClient.PostgresTeamsGetter.PostgresTeams(c.opConfig.WatchedNamespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		c.logger.Errorf("could not list postgres team objects: %v", err)
 	}

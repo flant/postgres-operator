@@ -21,7 +21,7 @@ AWS_ENDPOINT = getenv('AWS_ENDPOINT')
 OPERATOR_CLUSTER_NAME_LABEL = getenv('OPERATOR_CLUSTER_NAME_LABEL', 'cluster-name')
 
 COMMON_CLUSTER_LABEL = getenv('COMMON_CLUSTER_LABEL', '{"application":"spilo"}')
-COMMON_POOLER_LABEL = getenv('COMMONG_POOLER_LABEL', '{"application":"db-connection-pooler"}')
+COMMON_POOLER_LABEL = getenv('COMMON_POOLER_LABEL', '{"application":"db-connection-pooler"}')
 
 logger.info("Common Cluster Label: {}".format(COMMON_CLUSTER_LABEL))
 logger.info("Common Pooler Label: {}".format(COMMON_POOLER_LABEL))
@@ -107,6 +107,12 @@ def encode_labels(label_selector):
     ])
 
 
+def cluster_labels(spilo_cluster):
+    labels = COMMON_CLUSTER_LABEL
+    labels[OPERATOR_CLUSTER_NAME_LABEL] = spilo_cluster
+    return labels
+
+
 def kubernetes_url(
     resource_type,
     namespace='default',
@@ -151,7 +157,7 @@ def read_pods(cluster, namespace, spilo_cluster):
         cluster=cluster,
         resource_type='pods',
         namespace=namespace,
-        label_selector={OPERATOR_CLUSTER_NAME_LABEL: spilo_cluster},
+        label_selector=cluster_labels(spilo_cluster),
     )
 
 
@@ -302,6 +308,7 @@ def read_versions(
         if uid == 'wal' or defaulting(lambda: UUID(uid))
     ]
 
+BACKUP_VERSION_PREFIXES = ['','9.5/', '9.6/', '10/','11/', '12/', '13/']
 
 def read_basebackups(
     pg_cluster,
@@ -314,18 +321,24 @@ def read_basebackups(
 ):
     environ['WALE_S3_ENDPOINT'] = s3_endpoint
     suffix = '' if uid == 'base' else '/' + uid
-    return [
-        {
-            key: value
-            for key, value in basebackup.__dict__.items()
-            if isinstance(value, str) or isinstance(value, int)
-        }
-        for basebackup in Attrs.call(
-            f=configure_backup_cxt,
-            aws_instance_profile=use_aws_instance_profile,
-            s3_prefix=f's3://{bucket}/{prefix}{pg_cluster}{suffix}/wal/',
-        )._backup_list(detail=True)._backup_list(prefix=f"{prefix}{pg_cluster}{suffix}/wal/")
-    ]
+    backups = []
+
+    for vp in BACKUP_VERSION_PREFIXES:
+
+        backups = backups + [
+            {
+                key: value
+                for key, value in basebackup.__dict__.items()
+                if isinstance(value, str) or isinstance(value, int)
+            }
+            for basebackup in Attrs.call(
+                f=configure_backup_cxt,
+                aws_instance_profile=use_aws_instance_profile,
+                s3_prefix=f's3://{bucket}/{prefix}{pg_cluster}{suffix}/wal/{vp}',
+            )._backup_list(detail=True)
+        ]
+
+    return backups
 
 
 def parse_time(s: str):

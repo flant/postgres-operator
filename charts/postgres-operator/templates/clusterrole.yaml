@@ -44,13 +44,6 @@ rules:
   - get
   - patch
   - update
-# to read configuration from ConfigMaps
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  verbs:
-  - get
 # to send events to the CRs
 - apiGroups:
   - ""
@@ -63,7 +56,35 @@ rules:
   - patch
   - update
   - watch
-# to manage endpoints which are also used by Patroni
+# to manage endpoints/configmaps which are also used by Patroni
+{{- if toString .Values.configGeneral.kubernetes_use_configmaps | eq "true" }}
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - get
+{{- else }}
+# to read configuration from ConfigMaps
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
 - apiGroups:
   - ""
   resources:
@@ -77,6 +98,7 @@ rules:
   - patch
   - update
   - watch
+{{- end }}
 # to CRUD secrets for database access
 - apiGroups:
   - ""
@@ -105,6 +127,10 @@ rules:
   - delete
   - get
   - list
+{{- if toString .Values.configKubernetes.storage_resize_mode | eq "pvc" }}
+  - patch
+  - update
+{{- end }}
  # to read existing PVs. Creation should be done via dynamic provisioning
 - apiGroups:
   - ""
@@ -113,7 +139,9 @@ rules:
   verbs:
   - get
   - list
+{{- if toString .Values.configKubernetes.storage_resize_mode | eq "ebs" }}
   - update  # only for resizing AWS volumes
+{{- end }}
 # to watch Spilo pods and do rolling updates. Creation via StatefulSet
 - apiGroups:
   - ""
@@ -200,7 +228,8 @@ rules:
   verbs:
   - get
   - create
-# to grant privilege to run privileged pods
+{{- if toString .Values.configKubernetes.spilo_privileged | eq "true" }}
+# to run privileged pods
 - apiGroups:
   - extensions
   resources:
@@ -209,4 +238,5 @@ rules:
   - privileged
   verbs:
   - use
+{{- end }}
 {{ end }}

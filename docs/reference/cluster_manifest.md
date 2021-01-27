@@ -65,6 +65,10 @@ These parameters are grouped directly under  the `spec` key in the manifest.
   custom Docker image that overrides the **docker_image** operator parameter.
   It should be a [Spilo](https://github.com/zalando/spilo) image. Optional.
 
+* **schedulerName**
+  specifies the scheduling profile for database pods. If no value is provided
+  K8s' `default-scheduler` will be used. Optional.
+
 * **spiloRunAsUser**
   sets the user ID which should be used in the container to run the process.
   This must be set to run the container without root. By default the container
@@ -151,9 +155,14 @@ These parameters are grouped directly under  the `spec` key in the manifest.
   configured (so you can override the operator configuration). Optional.
 
 * **enableConnectionPooler**
-  Tells the operator to create a connection pooler with a database. If this
-  field is true, a connection pooler deployment will be created even if
+  Tells the operator to create a connection pooler with a database for the master
+  service. If this field is true, a connection pooler deployment will be created even if
   `connectionPooler` section is empty. Optional, not set by default.
+
+* **enableReplicaConnectionPooler**
+  Tells the operator to create a connection pooler with a database for the replica
+  service. If this field is true, a connection pooler deployment for replica
+  will be created even if `connectionPooler` section is empty. Optional, not set by default.
 
 * **enableLogicalBackup**
   Determines if the logical backup of this cluster should be taken and uploaded
@@ -245,10 +254,10 @@ explanation of `ttl` and `loop_wait` parameters.
 
 * **synchronous_mode**
   Patroni `synchronous_mode` parameter value. The default is set to `false`. Optional.
-  
+
 * **synchronous_mode_strict**
   Patroni `synchronous_mode_strict` parameter value. Can be used in addition to `synchronous_mode`. The default is set to `false`. Optional.
-  
+
 ## Postgres container resources
 
 Those parameters define [CPU and memory requests and limits](https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/)
@@ -333,13 +342,13 @@ archive is supported.
   the url to S3 bucket containing the WAL archive of the remote primary.
   Required when the `standby` section is present.
 
-## EBS volume resizing
+## Volume properties
 
 Those parameters are grouped under the `volume` top-level key and define the
 properties of the persistent storage that stores Postgres data.
 
 * **size**
-  the size of the target EBS volume. Usual Kubernetes size modifiers, i.e. `Gi`
+  the size of the target volume. Usual Kubernetes size modifiers, i.e. `Gi`
   or `Mi`, apply. Required.
 
 * **storageClass**
@@ -350,6 +359,14 @@ properties of the persistent storage that stores Postgres data.
 
 * **subPath**
   Subpath to use when mounting volume into Spilo container. Optional.
+
+* **iops**
+  When running the operator on AWS the latest generation of EBS volumes (`gp3`)
+  allows for configuring the number of IOPS. Maximum is 16000. Optional.
+
+* **throughput**
+  When running the operator on AWS the latest generation of EBS volumes (`gp3`)
+  allows for configuring the throughput in MB/s. Maximum is 1000. Optional.
 
 ## Sidecar definitions
 
@@ -401,8 +418,10 @@ CPU and memory limits for the sidecar container.
 
 Parameters are grouped under the `connectionPooler` top-level key and specify
 configuration for connection pooler. If this section is not empty, a connection
-pooler will be created for a database even if `enableConnectionPooler` is not
-present.
+pooler will be created for master service only even if `enableConnectionPooler`
+is not present. But if this section is present then it defines the configuration
+for both master and replica pooler services (if `enableReplicaConnectionPooler`
+ is enabled).
 
 * **numberOfInstances**
   How many instances of connection pooler to create.

@@ -1,7 +1,7 @@
 image:
   registry: registry.opensource.zalan.do
   repository: acid/postgres-operator
-  tag: v1.5.0
+  tag: v1.6.0
   pullPolicy: "IfNotPresent"
 
 # Optionally specify an array of imagePullSecrets.
@@ -21,14 +21,18 @@ configGeneral:
   enable_crd_validation: true
   # update only the statefulsets without immediately doing the rolling update
   enable_lazy_spilo_upgrade: false
+  # set the PGVERSION env var instead of providing the version via postgresql.bin_dir in SPILO_CONFIGURATION
+  enable_pgversion_env_var: true
   # start any new database pod without limitations on shm memory
   enable_shm_volume: true
+  # enables backwards compatible path between Spilo 12 and Spilo 13 images
+  enable_spilo_wal_path_compat: false
   # etcd connection string for Patroni. Empty uses K8s-native DCS.
   etcd_host: ""
   # Select if setup uses endpoints (default), or configmaps to manage leader (DCS=k8s)
   # kubernetes_use_configmaps: false
   # Spilo docker image
-  docker_image: registry.opensource.zalan.do/acid/spilo-12:1.6-p3
+  docker_image: registry.opensource.zalan.do/acid/spilo-13:2.0-p2
   # max number of instances in Postgres cluster. -1 = no limit
   min_instances: -1
   # min number of instances in Postgres cluster. -1 = no limit
@@ -89,7 +93,11 @@ configKubernetes:
   # namespaced name of the secret containing infrastructure roles names and passwords
   # infrastructure_roles_secret_name: postgresql-infrastructure-roles
 
-  # list of labels that can be inherited from the cluster manifest
+  # list of annotation keys that can be inherited from the cluster manifest
+  # inherited_annotations:
+  # - owned-by
+
+  # list of label keys that can be inherited from the cluster manifest
   # inherited_labels:
   # - application
   # - environment
@@ -136,7 +144,7 @@ configKubernetes:
   # whether the Spilo container should run in privileged mode
   spilo_privileged: false
   # storage resize strategy, available options are: ebs, pvc, off
-  storage_resize_mode: ebs
+  storage_resize_mode: pvc
   # operator watches for postgres objects in the given namespace
   watched_namespace: "*"  # listen to all namespaces
 
@@ -217,6 +225,11 @@ configAwsOrGcp:
   # AWS region used to store ESB volumes
   aws_region: eu-central-1
 
+  # enable automatic migration on AWS from gp2 to gp3 volumes
+  enable_ebs_gp3_migration: false
+  # defines maximum volume size in GB until which auto migration happens
+  # enable_ebs_gp3_migration_max_size: 1000
+
   # GCP credentials that will be used by the operator / pods
   # gcp_credentials: ""
 
@@ -235,7 +248,14 @@ configAwsOrGcp:
 # configure K8s cron job managed by the operator
 configLogicalBackup:
   # image for pods of the logical backup job (example runs pg_dumpall)
-  logical_backup_docker_image: "registry.opensource.zalan.do/acid/logical-backup:master-58"
+  logical_backup_docker_image: "registry.opensource.zalan.do/acid/logical-backup:v1.6.0"
+  # path of google cloud service account json file
+  # logical_backup_google_application_credentials: ""
+
+  # prefix for the backup job name
+  logical_backup_job_prefix: "logical-backup-"
+  # storage provider - either "s3" or "gcs"
+  logical_backup_provider: "s3"
   # S3 Access Key ID
   logical_backup_s3_access_key_id: ""
   # S3 bucket to store backup results
@@ -257,9 +277,9 @@ configTeamsApi:
   # enable_admin_role_for_users: true
 
   # operator watches for PostgresTeam CRs to assign additional teams and members to clusters
-  enable_postgres_team_crd: true
+  enable_postgres_team_crd: false
   # toogle to create additional superuser teams from PostgresTeam CRs
-  # enable_postgres_team_crd_superusers: "false"
+  # enable_postgres_team_crd_superusers: false
 
   # toggle to grant superuser to team members created from the Teams API
   enable_team_superuser: false
@@ -339,17 +359,23 @@ resources:
     cpu: 100m
     memory: 250Mi
 
+securityContext:
+  runAsUser: 1000
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
 # Affinity for pod assignment
 # Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
 affinity: {}
 
-# Tolerations for pod assignment
-# Ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
-tolerations: []
-
 # Node labels for pod assignment
 # Ref: https://kubernetes.io/docs/user-guide/node-selection/
 nodeSelector: {}
+
+# Tolerations for pod assignment
+# Ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+tolerations: []
 
 controllerID:
   # Specifies whether a controller ID should be defined for the operator

@@ -3,10 +3,12 @@ kind: OperatorConfiguration
 metadata:
   name: postgresql-operator-default-configuration
 configuration:
-  docker_image: registry.opensource.zalan.do/acid/spilo-12:1.6-p3
+  docker_image: registry.opensource.zalan.do/acid/spilo-13:2.0-p2
   # enable_crd_validation: true
   # enable_lazy_spilo_upgrade: false
+  enable_pgversion_env_var: true
   # enable_shm_volume: true
+  enable_spilo_wal_path_compat: false
   etcd_host: ""
   # kubernetes_use_configmaps: false
   max_instances: -1
@@ -49,6 +51,8 @@ configuration:
     # - secretname: "other-infrastructure-role"
     #   userkey: "other-user-key"
     #   passwordkey: "other-password-key"
+    # inherited_annotations:
+    # - owned-by
     # inherited_labels:
     # - application
     # - environment
@@ -72,7 +76,7 @@ configuration:
     # spilo_runasgroup: 103
     # spilo_fsgroup: 103
     spilo_privileged: false
-    storage_resize_mode: ebs
+    storage_resize_mode: pvc
     # toleration: {}
     # watched_namespace: ""
   postgres_pod_resources:
@@ -103,13 +107,18 @@ configuration:
     # additional_secret_mount: "some-secret-name"
     # additional_secret_mount_path: "/some/dir"
     aws_region: eu-central-1
+    enable_ebs_gp3_migration: false
+    # enable_ebs_gp3_migration_max_size: 1000
     # gcp_credentials: ""
     # kube_iam_role: ""
     # log_s3_bucket: ""
     # wal_gs_bucket: ""
     # wal_s3_bucket: ""
   logical_backup:
-    logical_backup_docker_image: "registry.opensource.zalan.do/acid/logical-backup:master-58"
+    logical_backup_docker_image: "registry.opensource.zalan.do/acid/logical-backup:v1.6.0"
+    # logical_backup_google_application_credentials: ""
+    logical_backup_job_prefix: "logical-backup-"
+    logical_backup_provider: "s3"
     # logical_backup_s3_access_key_id: ""
     logical_backup_s3_bucket: "my-bucket-url"
     # logical_backup_s3_endpoint: ""
@@ -122,7 +131,7 @@ configuration:
     enable_database_access: true
   teams_api:
     # enable_admin_role_for_users: true
-    # enable_postgres_team_crd: true
+    # enable_postgres_team_crd: false
     # enable_postgres_team_crd_superusers: false
     enable_team_superuser: false
     enable_teams_api: false

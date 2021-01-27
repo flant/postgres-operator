@@ -11,17 +11,29 @@ switchover (planned failover) of the master to the Pod with new minor version.
 The switch should usually take less than 5 seconds, still clients have to
 reconnect.
 
-Major version upgrades are supported via [cloning](user.md#how-to-clone-an-existing-postgresql-cluster).
-The new cluster manifest must have a higher `version` string than the source
-cluster and will be created from a basebackup. Depending of the cluster size,
-downtime in this case can be significant as writes to the database should be
-stopped and all WAL files should be archived first before cloning is started.
+Major version upgrades are supported either via [cloning](user.md#how-to-clone-an-existing-postgresql-cluster)
+or in-place.
 
-Note, that simply changing the version string in the `postgresql` manifest does
-not work at present and leads to errors. Neither Patroni nor Postgres Operator
-can do in place `pg_upgrade`. Still, it can be executed manually in the Postgres
-container, which is tricky (i.e. systems need to be stopped, replicas have to be
-synced) but of course faster than cloning.
+With cloning, the new cluster manifest must have a higher `version` string than
+the source cluster and will be created from a basebackup. Depending of the
+cluster size, downtime in this case can be significant as writes to the database
+should be stopped and all WAL files should be archived first before cloning is
+started.
+
+Starting with Spilo 13, Postgres Operator can do in-place major version upgrade,
+which should be faster than cloning. However, it is not fully automatic yet.
+First, you need to make sure, that setting the `PGVERSION` environment variable
+is enabled in the configuration. Since `v1.6.0`, `enable_pgversion_env_var` is
+enabled by default.
+
+To trigger the upgrade, increase the version in the cluster manifest. After
+Pods are rotated `configure_spilo` will notice the version mismatch and start
+the old version again. You can then exec into the Postgres container of the
+master instance and call `python3 /scripts/inplace_upgrade.py N` where `N`
+is the number of members of your cluster (see [`numberOfInstances`](https://github.com/zalando/postgres-operator/blob/50cb5898ea715a1db7e634de928b2d16dc8cd969/manifests/minimal-postgres-manifest.yaml#L10)).
+The upgrade is usually fast, well under one minute for most DBs. Note, that
+changes become irrevertible once `pg_upgrade` is called. To understand the
+upgrade procedure, refer to the [corresponding PR in Spilo](https://github.com/zalando/spilo/pull/488).
 
 ## CRD Validation
 
@@ -687,6 +699,32 @@ aws_or_gcp:
   gcp_credentials: "/var/secrets/google/key.json"  # combination of the mount path & key in the K8s resource. (i.e. key.json)
 ...
 ```
+
+### Setup pod environment configmap
+
+To make postgres-operator work with GCS, use following configmap:
+```yml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pod-env-overrides
+  namespace: postgres-operator-system
+data:
+  # Any env variable used by spilo can be added
+  USE_WALG_BACKUP: "true"
+  USE_WALG_RESTORE: "true"
+  CLONE_USE_WALG_RESTORE: "true"
+```
+This configmap will instruct operator to use WAL-G, instead of WAL-E, for backup and restore.
+
+Then provide this configmap in postgres-operator settings:
+```yml
+...
+# namespaced name of the ConfigMap with environment variables to populate on every pod
+pod_environment_configmap: "postgres-operator-system/pod-env-overrides"
+...
+```
+
 
 ## Sidecars for Postgres clusters
 

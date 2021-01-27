@@ -240,7 +240,7 @@ func (c *Cluster) getTeamMembers(teamID string) ([]string, error) {
 
 	c.logger.Debugf("fetching possible additional team members for team %q", teamID)
 	members := []string{}
-	additionalMembers := c.PgTeamMap[c.Spec.TeamID].AdditionalMembers
+	additionalMembers := c.PgTeamMap[teamID].AdditionalMembers
 	for _, member := range additionalMembers {
 		members = append(members, member)
 	}
@@ -269,6 +269,33 @@ func (c *Cluster) getTeamMembers(teamID string) ([]string, error) {
 	}
 
 	return members, nil
+}
+
+// Returns annotations to be passed to child objects
+func (c *Cluster) annotationsSet(annotations map[string]string) map[string]string {
+
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	pgCRDAnnotations := c.ObjectMeta.Annotations
+
+	// allow to inherit certain labels from the 'postgres' object
+	if pgCRDAnnotations != nil {
+		for k, v := range pgCRDAnnotations {
+			for _, match := range c.OpConfig.InheritedAnnotations {
+				if k == match {
+					annotations[k] = v
+				}
+			}
+		}
+	}
+
+	if len(annotations) > 0 {
+		return annotations
+	}
+
+	return nil
 }
 
 func (c *Cluster) waitForPodLabel(podEvents chan PodEvent, stopChan chan struct{}, role *PostgresRole) (*v1.Pod, error) {
@@ -449,28 +476,6 @@ func (c *Cluster) labelsSelector() *metav1.LabelSelector {
 	}
 }
 
-// Return connection pooler labels selector, which should from one point of view
-// inherit most of the labels from the cluster itself, but at the same time
-// have e.g. different `application` label, so that recreatePod operation will
-// not interfere with it (it lists all the pods via labels, and if there would
-// be no difference, it will recreate also pooler pods).
-func (c *Cluster) connectionPoolerLabelsSelector() *metav1.LabelSelector {
-	connectionPoolerLabels := labels.Set(map[string]string{})
-
-	extraLabels := labels.Set(map[string]string{
-		"connection-pooler": c.connectionPoolerName(),
-		"application":       "db-connection-pooler",
-	})
-
-	connectionPoolerLabels = labels.Merge(connectionPoolerLabels, c.labelsSet(false))
-	connectionPoolerLabels = labels.Merge(connectionPoolerLabels, extraLabels)
-
-	return &metav1.LabelSelector{
-		MatchLabels:      connectionPoolerLabels,
-		MatchExpressions: nil,
-	}
-}
-
 func (c *Cluster) roleLabelsSet(shouldAddExtraLabels bool, role PostgresRole) labels.Set {
 	lbls := c.labelsSet(shouldAddExtraLabels)
 	lbls[c.OpConfig.PodRoleLabel] = string(role)
@@ -551,18 +556,6 @@ func (c *Cluster) patroniKubernetesUseConfigMaps() bool {
 
 	// otherwise, follow the operator configuration
 	return c.OpConfig.KubernetesUseConfigMaps
-}
-
-func (c *Cluster) needConnectionPoolerWorker(spec *acidv1.PostgresSpec) bool {
-	if spec.EnableConnectionPooler == nil {
-		return spec.ConnectionPooler != nil
-	} else {
-		return *spec.EnableConnectionPooler
-	}
-}
-
-func (c *Cluster) needConnectionPooler() bool {
-	return c.needConnectionPoolerWorker(&c.Spec)
 }
 
 // Earlier arguments take priority
