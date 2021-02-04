@@ -198,8 +198,13 @@ func (c *Cluster) getConnectionPoolerEnvVars() []v1.EnvVar {
 	}
 }
 
-func (c *Cluster) generateConnectionPoolerPodTemplate(role PostgresRole) (
-	*v1.PodTemplateSpec, error) {
+func (c *Cluster) generateConnectionPoolerPodTemplate(
+	role PostgresRole,
+	tolerationsSpec *[]v1.Toleration,
+	nodeAffinity *v1.Affinity,
+	podAntiAffinity bool,
+	podAntiAffinityTopologyKey string,
+) (*v1.PodTemplateSpec, error) {
 	spec := &c.Spec
 	gracePeriod := int64(c.OpConfig.PodTerminateGracePeriod.Seconds())
 	resources, err := generateResourceRequirements(
@@ -285,19 +290,25 @@ func (c *Cluster) generateConnectionPoolerPodTemplate(role PostgresRole) (
 		},
 	}
 
+	podSpec := v1.PodSpec{
+		TerminationGracePeriodSeconds: &gracePeriod,
+		Containers:                    []v1.Container{poolerContainer},
+		Tolerations:                   *tolerationsSpec,
+	}
+
+	if podAntiAffinity {
+		podSpec.Affinity = generatePodAffinity(labels, podAntiAffinityTopologyKey, nodeAffinity)
+	} else if nodeAffinity != nil {
+		podSpec.Affinity = nodeAffinity
+	}
+
 	podTemplate := &v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels:      c.connectionPoolerLabels(role, true).MatchLabels,
 			Namespace:   c.Namespace,
 			Annotations: c.annotationsSet(c.generatePodAnnotations(spec)),
 		},
-		Spec: v1.PodSpec{
-			TerminationGracePeriodSeconds: &gracePeriod,
-			Containers:                    []v1.Container{poolerContainer},
-			// TODO: add tolerations to scheduler pooler on the same node
-			// as database
-			//Tolerations:                   *tolerationsSpec,
-		},
+		Spec: podSpec,
 	}
 
 	return podTemplate, nil
@@ -316,7 +327,9 @@ func (c *Cluster) generateConnectionPoolerDeployment(connectionPooler *Connectio
 	if spec.ConnectionPooler == nil {
 		spec.ConnectionPooler = &acidv1.ConnectionPooler{}
 	}
-	podTemplate, err := c.generateConnectionPoolerPodTemplate(connectionPooler.Role)
+	tolerationSpec := tolerations(&spec.Tolerations, c.OpConfig.PodToleration)
+
+	podTemplate, err := c.generateConnectionPoolerPodTemplate(connectionPooler.Role, &tolerationSpec, nodeAffinity(c.OpConfig.NodeReadinessLabel, spec.NodeAffinity), c.OpConfig.EnablePodAntiAffinity, c.OpConfig.PodAntiAffinityTopologyKey)
 
 	numberOfInstances := spec.ConnectionPooler.NumberOfInstances
 	if numberOfInstances == nil {
