@@ -200,6 +200,7 @@ func (c *Cluster) getConnectionPoolerEnvVars() []v1.EnvVar {
 
 func (c *Cluster) generateConnectionPoolerPodTemplate(
 	role PostgresRole,
+	labels labels.Set,
 	tolerationsSpec *[]v1.Toleration,
 	nodeAffinity *v1.Affinity,
 	podAntiAffinity bool,
@@ -329,7 +330,7 @@ func (c *Cluster) generateConnectionPoolerDeployment(connectionPooler *Connectio
 	}
 	tolerationSpec := tolerations(&spec.Tolerations, c.OpConfig.PodToleration)
 
-	podTemplate, err := c.generateConnectionPoolerPodTemplate(connectionPooler.Role, &tolerationSpec, nodeAffinity(c.OpConfig.NodeReadinessLabel, spec.NodeAffinity), c.OpConfig.EnablePodAntiAffinity, c.OpConfig.PodAntiAffinityTopologyKey)
+	podTemplate, err := c.generateConnectionPoolerPodTemplate(connectionPooler.Role, c.labelsSet(true), &tolerationSpec, nodeAffinity(c.OpConfig.NodeReadinessLabel, spec.NodeAffinity), c.OpConfig.EnablePodAntiAffinity, c.OpConfig.PodAntiAffinityTopologyKey)
 
 	numberOfInstances := spec.ConnectionPooler.NumberOfInstances
 	if numberOfInstances == nil {

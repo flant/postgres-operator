@@ -19,7 +19,7 @@ spec:
       serviceAccountName: postgres-operator
       containers:
       - name: postgres-operator
-        image: gyrt/postgres-operator:v1.6.1
+        image: gyrt/postgres-operator:v1.6.2
         imagePullPolicy: Always
         resources:
           requests:
